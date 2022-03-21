@@ -1,0 +1,9 @@
+domain: aseara.github.com
+layout:
+- go.kubebuilder.io/v3
+plugins:
+  manifests.sdk.operatorframework.io/v2: {}
+  scorecard.sdk.operatorframework.io/v2: {}
+projectName: opdemo
+repo: github.com/aseara/demo-operator
+version: "3"
