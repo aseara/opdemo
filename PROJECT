@@ -6,4 +6,14 @@ plugins:
   scorecard.sdk.operatorframework.io/v2: {}
 projectName: opdemo
 repo: github.com/aseara/demo-operator
+resources:
+- api:
+    crdVersion: v1
+    namespaced: true
+  controller: true
+  domain: aseara.github.com
+  group: app
+  kind: AppService
+  path: github.com/aseara/demo-operator/api/v1
+  version: v1
 version: "3"
