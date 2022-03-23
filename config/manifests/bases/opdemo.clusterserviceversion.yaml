@@ -1,0 +1,48 @@
+apiVersion: operators.coreos.com/v1alpha1
+kind: ClusterServiceVersion
+metadata:
+  annotations:
+    alm-examples: '[]'
+    capabilities: Basic Install
+  name: opdemo.v0.0.0
+  namespace: placeholder
+spec:
+  apiservicedefinitions: {}
+  customresourcedefinitions:
+    owned:
+    - description: AppService is the Schema for the appservices API
+      displayName: App Service
+      kind: AppService
+      name: appservices.app.aseara.github.com
+      version: v1
+  description: app operator
+  displayName: app-operator
+  icon:
+  - base64data: ""
+    mediatype: ""
+  install:
+    spec:
+      deployments: null
+    strategy: ""
+  installModes:
+  - supported: false
+    type: OwnNamespace
+  - supported: false
+    type: SingleNamespace
+  - supported: false
+    type: MultiNamespace
+  - supported: true
+    type: AllNamespaces
+  keywords:
+  - app
+  - service
+  links:
+  - name: Opdemo
+    url: https://opdemo.domain
+  maintainers:
+  - email: aseara@163.com
+    name: aseara
+  maturity: alpha
+  provider:
+    name: aseara
+  version: 0.0.0
