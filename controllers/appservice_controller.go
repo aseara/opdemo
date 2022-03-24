@@ -42,6 +42,10 @@ type AppServiceReconciler struct {
 //+kubebuilder:rbac:groups=app.aseara.github.com,resources=appservices,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups=app.aseara.github.com,resources=appservices/status,verbs=get;update;patch
 //+kubebuilder:rbac:groups=app.aseara.github.com,resources=appservices/finalizers,verbs=update
+//+kubebuilder:rbac:groups="",resources=pods;services;endpoints;persistentvolumeclaims;events;configmaps;secrets,verbs=*
+//+kubebuilder:rbac:groups="",resources=namespace,verbs=get
+//+kubebuilder:rbac:groups=apps,resources=deployments;daemonsets;replicasets;statefulsets,verbs=*
+//+kubebuilder:rbac:groups=monitoring.coreos.com,resources=servicemonitors,verbs=get;create
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.
@@ -92,34 +96,33 @@ func (r *AppServiceReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 		if err := r.Client.Create(context.TODO(), service); err != nil {
 			return ctrl.Result{}, err
 		}
-
-	}
-
-	oldspec := &appv1.AppServiceSpec{}
-	if err := json.Unmarshal([]byte(instance.Annotations["spec"]), oldspec); err != nil {
-		return ctrl.Result{}, err
-	}
-
-	if !reflect.DeepEqual(instance.Spec, oldspec) {
-		// 更新关联资源
-		newDeploy := resource.NewDeploy(instance)
-		oldDeploy := &appsv1.Deployment{}
-		if err := r.Client.Get(context.TODO(), req.NamespacedName, oldDeploy); err != nil {
-			return ctrl.Result{}, err
-		}
-		oldDeploy.Spec = newDeploy.Spec
-		if err := r.Client.Update(context.TODO(), oldDeploy); err != nil {
+	} else {
+		oldspec := &appv1.AppServiceSpec{}
+		if err := json.Unmarshal([]byte(instance.Annotations["spec"]), oldspec); err != nil {
 			return ctrl.Result{}, err
 		}
 
-		newService := resource.NewService(instance)
-		oldService := &corev1.Service{}
-		if err := r.Client.Get(context.TODO(), req.NamespacedName, oldService); err != nil {
-			return ctrl.Result{}, err
-		}
-		oldService.Spec = newService.Spec
-		if err := r.Client.Update(context.TODO(), oldService); err != nil {
-			return ctrl.Result{}, err
+		if !reflect.DeepEqual(instance.Spec, oldspec) {
+			// 更新关联资源
+			newDeploy := resource.NewDeploy(instance)
+			oldDeploy := &appsv1.Deployment{}
+			if err := r.Client.Get(context.TODO(), req.NamespacedName, oldDeploy); err != nil {
+				return ctrl.Result{}, err
+			}
+			oldDeploy.Spec = newDeploy.Spec
+			if err := r.Client.Update(context.TODO(), oldDeploy); err != nil {
+				return ctrl.Result{}, err
+			}
+
+			newService := resource.NewService(instance)
+			oldService := &corev1.Service{}
+			if err := r.Client.Get(context.TODO(), req.NamespacedName, oldService); err != nil {
+				return ctrl.Result{}, err
+			}
+			oldService.Spec = newService.Spec
+			if err := r.Client.Update(context.TODO(), oldService); err != nil {
+				return ctrl.Result{}, err
+			}
 		}
 	}
 
