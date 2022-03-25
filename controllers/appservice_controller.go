@@ -24,7 +24,6 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -57,90 +56,57 @@ type AppServiceReconciler struct {
 //
 // For more details, check Reconcile and its Result here:
 // - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.11.0/pkg/reconcile
-func (r *AppServiceReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
+func (r *AppServiceReconciler) Reconcile(ctx context.Context, req ctrl.Request) (rt ctrl.Result, err error) {
 	reqLogger := log.FromContext(ctx, "Request.Namespace", req.Namespace, "Request.Name", req.Name)
 	reqLogger.Info("Reconciling AppService")
 
 	// Fetch the AppService instance
-	instance := &appv1.AppService{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: req.Name,
-		},
-	}
-	err := r.Client.Get(ctx, req.NamespacedName, instance)
+	instance := &appv1.AppService{}
+	err = r.Client.Get(ctx, req.NamespacedName, instance)
 	if err != nil {
 		if errors.IsNotFound(err) {
 			// Request object not found, could have been deleted after reconcile request.
 			// Owned objects are automatically garbage collected. For additional cleanup logic use finalizers.
 			// Return and don't requeue
-			return ctrl.Result{}, nil
+			err = nil
 		}
 		// Error reading the object - requeue the request.
-		return ctrl.Result{}, err
+		return
 	}
 
 	if instance.DeletionTimestamp != nil {
-		return ctrl.Result{}, nil
+		return
 	}
 
-	// 如果不存在，则创建关联资源
-	// 如果存在，判断是否需要更新
-	//   如果需要更新，则直接更新
-	//   如果不需要更新，则正常返回
+	var f bool = true
+	defer func() {
+		if !f || err != nil {
+			return
+		}
+		err = r.refreshSpec(ctx, instance)
+	}()
 
 	deploy := &appsv1.Deployment{}
-	if err := r.Client.Get(ctx, req.NamespacedName, deploy); err != nil && errors.IsNotFound(err) {
-		// 创建关联资源
-		// 1. 创建 Deploy
-		deploy := resource.NewDeploy(instance)
-		if err := r.Client.Create(ctx, deploy); err != nil {
-			return ctrl.Result{}, err
+	if err = r.Client.Get(ctx, req.NamespacedName, deploy); err != nil {
+		if errors.IsNotFound(err) {
+			err = r.createResource(ctx, instance, req.NamespacedName)
 		}
-		// 2. 创建 Service
-		service := resource.NewService(instance)
-		if err := r.Client.Create(ctx, service); err != nil {
-			return ctrl.Result{}, err
-		}
-	} else {
-		oldspec := &appv1.AppServiceSpec{}
-		if err := json.Unmarshal([]byte(instance.Annotations["spec"]), oldspec); err != nil {
-			return ctrl.Result{}, err
-		}
-
-		if !reflect.DeepEqual(instance.Spec, oldspec) {
-			// 更新关联资源
-			newDeploy := resource.NewDeploy(instance)
-			oldDeploy := &appsv1.Deployment{}
-			if err := r.Client.Get(ctx, req.NamespacedName, oldDeploy); err != nil {
-				return ctrl.Result{}, err
-			}
-			oldDeploy.Spec = newDeploy.Spec
-			if err := r.Client.Update(ctx, oldDeploy); err != nil {
-				return ctrl.Result{}, err
-			}
-
-			newService := resource.NewService(instance)
-			oldService := &corev1.Service{}
-			if err := r.Client.Get(ctx, req.NamespacedName, oldService); err != nil {
-				return ctrl.Result{}, err
-			}
-			oldService.Spec = newService.Spec
-			if err := r.Client.Update(ctx, oldService); err != nil {
-				return ctrl.Result{}, err
-			}
-		}
+		return
 	}
 
-	// 关联 Annotations
-	data, _ := json.Marshal(instance.Spec)
-	if instance.Annotations != nil {
-		instance.Annotations["spec"] = string(data)
-	} else {
-		instance.Annotations = map[string]string{"spec": string(data)}
+	oldspec := &appv1.AppServiceSpec{}
+	if err = json.Unmarshal([]byte(instance.Annotations["spec"]), oldspec); err != nil {
+		return
 	}
 
-	err = r.Client.Update(ctx, instance)
-	return ctrl.Result{}, err
+	// spec 没有变化，无需更新
+	if reflect.DeepEqual(instance.Spec, oldspec) {
+		f = false
+		return
+	}
+
+	err = r.updateResource(ctx, instance, req.NamespacedName)
+	return
 }
 
 // SetupWithManager sets up the controller with the Manager.
@@ -148,4 +114,48 @@ func (r *AppServiceReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&appv1.AppService{}).
 		Complete(r)
+}
+
+// createResource 创建关联资源
+func (r *AppServiceReconciler) createResource(ctx context.Context, instance *appv1.AppService, key client.ObjectKey) error {
+	// 1. 创建 Deploy
+	deploy := resource.NewDeploy(instance)
+	if err := r.Client.Create(ctx, deploy); err != nil {
+		return err
+	}
+	// 2. 创建 Service
+	service := resource.NewService(instance)
+	return r.Client.Create(ctx, service)
+}
+
+// updateResource 更新关联资源
+func (r *AppServiceReconciler) updateResource(ctx context.Context, instance *appv1.AppService, key client.ObjectKey) error {
+	newDeploy := resource.NewDeploy(instance)
+	oldDeploy := &appsv1.Deployment{}
+	if err := r.Client.Get(ctx, key, oldDeploy); err != nil {
+		return err
+	}
+	oldDeploy.Spec = newDeploy.Spec
+	if err := r.Client.Update(ctx, oldDeploy); err != nil {
+		return err
+	}
+	newService := resource.NewService(instance)
+	oldService := &corev1.Service{}
+	if err := r.Client.Get(ctx, key, oldService); err != nil {
+		return err
+	}
+	oldService.Spec = newService.Spec
+	return r.Client.Update(ctx, oldService)
+}
+
+// refreshSpec 更新AppService Annotation spec
+func (r *AppServiceReconciler) refreshSpec(ctx context.Context, instance *appv1.AppService) error {
+	// 关联 Annotations
+	data, _ := json.Marshal(instance.Spec)
+	if instance.Annotations != nil {
+		instance.Annotations["spec"] = string(data)
+	} else {
+		instance.Annotations = map[string]string{"spec": string(data)}
+	}
+	return r.Client.Update(ctx, instance)
 }
