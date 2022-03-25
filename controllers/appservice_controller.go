@@ -24,6 +24,7 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -61,8 +62,12 @@ func (r *AppServiceReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 	reqLogger.Info("Reconciling AppService")
 
 	// Fetch the AppService instance
-	instance := &appv1.AppService{}
-	err := r.Client.Get(context.TODO(), req.NamespacedName, instance)
+	instance := &appv1.AppService{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: req.Name,
+		},
+	}
+	err := r.Client.Get(ctx, req.NamespacedName, instance)
 	if err != nil {
 		if errors.IsNotFound(err) {
 			// Request object not found, could have been deleted after reconcile request.
@@ -84,16 +89,16 @@ func (r *AppServiceReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 	//   如果不需要更新，则正常返回
 
 	deploy := &appsv1.Deployment{}
-	if err := r.Client.Get(context.TODO(), req.NamespacedName, deploy); err != nil && errors.IsNotFound(err) {
+	if err := r.Client.Get(ctx, req.NamespacedName, deploy); err != nil && errors.IsNotFound(err) {
 		// 创建关联资源
 		// 1. 创建 Deploy
 		deploy := resource.NewDeploy(instance)
-		if err := r.Client.Create(context.TODO(), deploy); err != nil {
+		if err := r.Client.Create(ctx, deploy); err != nil {
 			return ctrl.Result{}, err
 		}
 		// 2. 创建 Service
 		service := resource.NewService(instance)
-		if err := r.Client.Create(context.TODO(), service); err != nil {
+		if err := r.Client.Create(ctx, service); err != nil {
 			return ctrl.Result{}, err
 		}
 	} else {
@@ -106,21 +111,21 @@ func (r *AppServiceReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 			// 更新关联资源
 			newDeploy := resource.NewDeploy(instance)
 			oldDeploy := &appsv1.Deployment{}
-			if err := r.Client.Get(context.TODO(), req.NamespacedName, oldDeploy); err != nil {
+			if err := r.Client.Get(ctx, req.NamespacedName, oldDeploy); err != nil {
 				return ctrl.Result{}, err
 			}
 			oldDeploy.Spec = newDeploy.Spec
-			if err := r.Client.Update(context.TODO(), oldDeploy); err != nil {
+			if err := r.Client.Update(ctx, oldDeploy); err != nil {
 				return ctrl.Result{}, err
 			}
 
 			newService := resource.NewService(instance)
 			oldService := &corev1.Service{}
-			if err := r.Client.Get(context.TODO(), req.NamespacedName, oldService); err != nil {
+			if err := r.Client.Get(ctx, req.NamespacedName, oldService); err != nil {
 				return ctrl.Result{}, err
 			}
 			oldService.Spec = newService.Spec
-			if err := r.Client.Update(context.TODO(), oldService); err != nil {
+			if err := r.Client.Update(ctx, oldService); err != nil {
 				return ctrl.Result{}, err
 			}
 		}
@@ -134,7 +139,7 @@ func (r *AppServiceReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 		instance.Annotations = map[string]string{"spec": string(data)}
 	}
 
-	err = r.Client.Update(context.TODO(), instance)
+	err = r.Client.Update(ctx, instance)
 	return ctrl.Result{}, err
 }
 
