@@ -80,10 +80,9 @@ func (r *AppServiceReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 
 	var f bool = true
 	defer func() {
-		if !f || err != nil {
-			return
+		if f && err == nil {
+			err = r.refreshSpec(ctx, instance)
 		}
-		err = r.refreshSpec(ctx, instance)
 	}()
 
 	deploy := &appsv1.Deployment{}
